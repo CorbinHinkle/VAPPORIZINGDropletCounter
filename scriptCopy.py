@@ -34,6 +34,8 @@ def process_images(folder, micron_per_pixel, min_diam, max_diam, diag_folder):
             img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) 
             if img is None: 
                 continue 
+
+
             image_count += 1 
             # Resize consistency 
             if base_shape is None: 
@@ -48,29 +50,32 @@ def process_images(folder, micron_per_pixel, min_diam, max_diam, diag_folder):
             ####################################################################################################################################################
 
             # Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            clahe = cv2.createCLAHE(clipLimit=1.25, tileGridSize=(32,32))
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(16, 16))
             enhanced = clahe.apply(img)
             # Gaussian blurring to reduce noise and create a smooth background for subtraction (helps with uneven illumination)
-            #background = cv2.GaussianBlur(enhanced, (51, 51), 0)
+            background = cv2.GaussianBlur(enhanced, (47, 47), 0)
             # Subtract background
-            #corrected = cv2.subtract(enhanced, background)
-            # Thresholding for illumination correction 
-            thresh = cv2.adaptiveThreshold(enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 101, 1) 
+            corrected = cv2.subtract(enhanced, background)
+            # Thresholding for illumination correction  
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            thresh = cv2.morphologyEx(corrected, cv2.MORPH_OPEN, kernel, iterations=1)
+            thresh = cv2.adaptiveThreshold(thresh, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 1)
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=1)
+            #thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=3)
+            #thresh = cv2.morphologyEx(thresh, cv2.MORPH_ERODE, kernel, iterations=1)
+            # More aggressive morphological operations to remove noise
             # Remove edge artifacts by creating a larger border mask
-            h, w = enhanced.shape
-            border_mask = np.ones_like(enhanced, dtype=np.uint8) * 255
+            h, w = thresh.shape
+            border_mask = np.ones_like(thresh, dtype=np.uint8) * 255
             border_size = 5  # Reduced from 20 to 5 - minimal border removal
             border_mask[:border_size, :] = 0
             border_mask[-border_size:, :] = 0
             border_mask[:, :border_size] = 0
             border_mask[:, -border_size:] = 0
             thresh = cv2.bitwise_and(thresh, border_mask)
-            # More aggressive morphological operations to remove noise
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-            thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1) 
             from scipy import ndimage as ndi
+            # Hole filling
             thresh = ndi.binary_fill_holes(thresh > 0).astype(np.uint8) * 255 
-            # Removed MORPH_CLOSE to avoid merging fragments
             labels = measure.label(thresh) 
             # Extract properties of labeled regions using the corrected image for intensity-based measurements (if needed for future enhancements)
             # Analyze connected components
@@ -175,11 +180,11 @@ class DropletApp:
         self.scale_entry.pack() 
         tk.Label(root, text="Min diameter (µm)", font=("Helvetica", 12, "bold")).pack() 
         self.min_entry = tk.Entry(root) 
-        self.min_entry.insert(0, "2") 
+        self.min_entry.insert(0, "1") 
         self.min_entry.pack() 
         tk.Label(root, text="Max diameter (µm)", font=("Helvetica", 12, "bold")).pack() 
         self.max_entry = tk.Entry(root) 
-        self.max_entry.insert(0, "20") 
+        self.max_entry.insert(0, "50") 
         self.max_entry.pack() 
         tk.Button(root, text="Run Analysis", command=self.run, width=20, height=2, bg="lightgreen", font=("Helvetica", 12, "bold")).pack(pady=10) 
         # Frame to hold plots
@@ -206,15 +211,28 @@ class DropletApp:
             # 3996/200 = 19.98 µm capture area height at specimen
             # 35.52 µm * 19.98 µm = 709.9296 µm² = 0.0007099296 mm² per image
             area_per_image_mm2 = 0.07097 # mm^2
-            outfolderpathData = f"output/{self.folder_path.split('/')[-1]}/data"
-            if not os.path.exists(outfolderpathData):
-                os.makedirs(outfolderpathData)
-            outfolderpathGraphs = f"output/{self.folder_path.split('/')[-1]}/graphs"
-            if not os.path.exists(outfolderpathGraphs):
-                os.makedirs(outfolderpathGraphs)
-            diag_folder = os.path.join("output", os.path.basename(self.folder_path), "images")
-            if not os.path.exists(diag_folder):
-                os.makedirs(diag_folder)
+            # Get the name of the selected image folder
+            folder_name = os.path.basename(os.path.normpath(self.folder_path))
+
+            # Find the directory containing this Python script
+            BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+            # Main output directory
+            output_root = os.path.join(BASE_DIR, "output")
+
+            # Output directory for this analysis
+            analysis_output = os.path.join(output_root, folder_name)
+
+            # Individual output folders
+            outfolderpathData = os.path.join(analysis_output, "data")
+            outfolderpathGraphs = os.path.join(analysis_output, "graphs")
+            diag_folder = os.path.join(analysis_output, "images")
+
+            # Create all directories
+            os.makedirs(outfolderpathData, exist_ok=True)
+            os.makedirs(outfolderpathGraphs, exist_ok=True)
+            os.makedirs(diag_folder, exist_ok=True)
+
             diameters, areas, avg_image, image_count = process_images(self.folder_path, micron_per_pixel, min_diam, max_diam, diag_folder)
             if len(diameters) == 0: 
                 messagebox.showinfo("Result", "No droplets found") 
@@ -228,14 +246,23 @@ class DropletApp:
             print(f"Images processed: {image_count}")
             print(f"Total area: {total_area_mm2} mm²")
             print(f"Droplets detected: {len(diameters)}")
-            print(f"Diameter stats - Min: {np.min(diameters):.2f}, Max: {np.max(diameters):.2f}, Mean: {np.mean(diameters):.2f}")
+            print(f"Diameter stats - Min: {np.min(diameters):.2f} µm, Max: {np.max(diameters):.2f} µm, Mean: {np.mean(diameters):.2f} µm")
             print(f"Unique diameters: {len(np.unique(np.round(diameters, 1)))}")
-            print(f"Total volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters)):.4f}")
-            print(f"Average droplet volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters))/len(diameters):.4f}")
+            print(f"Total volume: {(sum((1/6)*(math.pi)*(diameters*diameters*diameters)))/10000:.4f} cm³")
+            print(f"Average droplet volume: {(sum((1/6)*(math.pi)*(diameters*diameters*diameters))/len(diameters))/10000:.4f} cm³")
             print(f"=================\n")
-            
+            debug_path = os.path.join(outfolderpathData, "debug_info.txt")
+            with open(debug_path, "w") as f:
+                f.write(f"=== DEBUG INFO FOR {self.folder_path} ===\n\n")
+                f.write(f"Images processed: {image_count}\n")
+                f.write(f"Total area: {total_area_mm2} mm²\n")
+                f.write(f"Droplets detected: {len(diameters)}\n")
+                f.write(f"Diameter stats - Min: {np.min(diameters):.2f} µm, Max: {np.max(diameters):.2f} µm, Mean: {np.mean(diameters):.2f} µm\n")
+                f.write(f"Unique diameters: {len(np.unique(np.round(diameters, 1)))}\n")
+                f.write(f"Total volume: {(sum((1/6)*(math.pi)*(diameters*diameters*diameters)))/10000:.4f} cm³\n")
+                f.write(f"Average droplet volume: {(sum((1/6)*(math.pi)*(diameters*diameters*diameters))/len(diameters))/10000:.4f} cm³\n")
             # Save data
-            df = pd.DataFrame({"Droplet Diameter (um)": diameters, "Droplet Area (um2)": areas, "Droplet Volume (um3)": (1/6)*(math.pi)*(diameters*diameters*diameters)})
+            df = pd.DataFrame({"Droplet Diameter (um)": diameters, "Droplet Area (um2)": areas, "Droplet Volume (cm3)": ((1/6)*(math.pi)*(diameters*diameters*diameters))/10000})  # Volume in µm³ converted to cm³
             
             # Remove old CSV file if it exists (fixes permission denied errors on Windows)
             csv_path = os.path.join(outfolderpathData, "droplet_results.csv")
@@ -272,7 +299,7 @@ class DropletApp:
             print(f"\nHistogram bins with droplets:")
             for idx in non_zero_bins:
                 print(f"  Bin {idx}: {edges[idx]:.2f}-{edges[idx+1]:.2f} µm → {counts[idx]} droplets → {counts_per_area[idx]:.1f} per mm²")
-            fig1 = Figure(figsize=(3,2), dpi=100)
+            fig1 = Figure(figsize=(5,4), dpi=100)
             ax1 = fig1.add_subplot(111)
 
             ax1.bar(edges[:-1],
@@ -286,7 +313,7 @@ class DropletApp:
 
             canvas1 = FigureCanvasTkAgg(fig1, master=self.plot_frame)
             canvas1.draw()
-            canvas1.get_tk_widget().grid(row=0, column=0, padx=10, pady=10)
+            canvas1.get_tk_widget().grid(row=0, column=0, padx=8, pady=8)
 
             self.canvases.append(canvas1)
 
@@ -304,7 +331,7 @@ class DropletApp:
             # Normalize by total area (OPTIONAL but better scientifically) 
             area_fraction = area_sum_per_bin / (total_area_mm2 * 1e6)  # µm² → mm² 
 
-            fig2 = Figure(figsize=(3,2), dpi=100)
+            fig2 = Figure(figsize=(5,4), dpi=100)
             ax2 = fig2.add_subplot(111)
 
             ax2.bar(edges[:-1], area_fraction, width=np.diff(edges),align='edge')
@@ -315,7 +342,7 @@ class DropletApp:
 
             canvas2 = FigureCanvasTkAgg(fig2, master=self.plot_frame)
             canvas2.draw()
-            canvas2.get_tk_widget().grid(row=0, column=1, padx=10, pady=10)
+            canvas2.get_tk_widget().grid(row=0, column=1, padx=8, pady=8)
 
             self.canvases.append(canvas2)
 
@@ -325,9 +352,9 @@ class DropletApp:
             # Plot 3: Teflon-scaled count per area
             # ------------------------- 
             
-            teflon_area = (1/4)*(math.pi)*(100**2) # Area of teflon plate onto which droplets are nebulized
+            teflon_area = (1/4)*(math.pi)*(20**2) # Area of teflon plate onto which droplets are nebulized
             counts_per_teflon = counts_per_area*teflon_area # Droplet count per area scaled for teflon plate
-            fig3 = Figure(figsize=(3,2), dpi=100)
+            fig3 = Figure(figsize=(5,4), dpi=100)
             ax3 = fig3.add_subplot(111)
 
             ax3.bar(edges[:-1], counts_per_teflon, width=np.diff(edges), align='edge')
@@ -338,18 +365,40 @@ class DropletApp:
 
             canvas3 = FigureCanvasTkAgg(fig3, master=self.plot_frame)
             canvas3.draw()
-            canvas3.get_tk_widget().grid(row=0, column=2, padx=10, pady=10)
+            canvas3.get_tk_widget().grid(row=0, column=2, padx=8, pady=8)
 
             self.canvases.append(canvas3)
-
             fig3.savefig(os.path.join(outfolderpathGraphs, "count_per_teflon.png"))
-            # Save average image 
+
+            #-------------------------
+            # Plot 4: Volume ---------
+            #-------------------------
+            volume = ((1/6)*(math.pi)*(diameters*diameters*diameters))/10000  # Volume of each droplet in cm³
+            volume_sum_per_bin = np.zeros(len(edges) - 1)
+            for i in range(len(edges) - 1):
+                mask = (diameters >= edges[i]) & (diameters < edges[i+1])
+                volume_sum_per_bin[i] = np.sum(volume[mask])
+            volume_fraction = volume_sum_per_bin / (total_area_mm2 * 1e6)  # µm² → mm² 
+        
+            fig4 = Figure(figsize=(5,4), dpi=100)
+            ax4 = fig4.add_subplot(111)
+            ax4.bar(edges[:-1], volume_fraction, width=np.diff(edges),align='edge')
+            ax4.set_xlabel("Diameter (µm)")
+            ax4.set_ylabel("Volume Fraction")
+            ax4.set_title("Volume-Weighted Distribution")
+            canvas4 = FigureCanvasTkAgg(fig4, master=self.plot_frame)
+            canvas4.draw()
+            canvas4.get_tk_widget().grid(row=0, column=3, padx=8, pady=8)
+            self.canvases.append(canvas4)
+            fig4.savefig(os.path.join(outfolderpathGraphs, "volume_distribution.png"))
+            # Save average image if it exists
             if avg_image is not None: 
                 cv2.imwrite(os.path.join(outfolderpathGraphs, "average.png"), avg_image) 
-            messagebox.showinfo("Done", f"Images processed: {image_count}\nTotal area: {total_area_mm2:.6f} mm²\n\nFiles saved successfully. \n\n Droplets detected: {len(diameters)}\nDiameter range: {np.min(diameters):.2f}-{np.max(diameters):.2f} µm\nAverage diameter: {np.mean(diameters):.2f} µm\nTotal volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters))}\nAverage droplet volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters))/len(diameters):.4f}\n") 
-
+                messagebox.showinfo("Done", f"Images processed: {image_count}\nTotal area: {total_area_mm2:.6f} mm²\n\nFiles saved successfully. \n\n Droplets detected: {len(diameters)}\nDiameter range: {np.min(diameters):.2f}-{np.max(diameters):.2f} µm\nAverage diameter: {np.mean(diameters):.2f} µm\nTotal volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters))/10000:.4f} cm³\nAverage droplet volume: {sum((1/6)*(math.pi)*(diameters*diameters*diameters))/len(diameters)/10000:.4f} cm³\n") 
+        
         except Exception as e: 
             messagebox.showerror("Error", str(e)) 
+
 
 #########################################################################################################################################################
 ################################################################# GUI ###################################################################################

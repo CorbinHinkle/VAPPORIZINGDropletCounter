@@ -12,7 +12,7 @@ from skimage.feature import blob_log
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-def drop_plot(self, diameters, areas, total_area_mm2, bins, outfolderpathGraphs):
+def drop_plot(self, diameters, areas, total_area_mm2, volume, volume_fraction, bins, outfolderpathGraphs):
             counts, edges = np.histogram(diameters, bins=bins)
             counts_per_area = counts / total_area_mm2
             
@@ -74,7 +74,7 @@ def drop_plot(self, diameters, areas, total_area_mm2, bins, outfolderpathGraphs)
             # Plot 3: Teflon-scaled count per area
             # ------------------------- 
             
-            teflon_area = (1/4)*(math.pi)*(100**2) # Area of teflon plate onto which droplets are nebulized
+            teflon_area = (1/4)*(math.pi)*(20**2) # Area of teflon plate onto which droplets are nebulized
             counts_per_teflon = counts_per_area*teflon_area # Droplet count per area scaled for teflon plate
             fig3 = Figure(figsize=(3,2), dpi=100)
             ax3 = fig3.add_subplot(111)
@@ -92,5 +92,26 @@ def drop_plot(self, diameters, areas, total_area_mm2, bins, outfolderpathGraphs)
             self.canvases.append(canvas3)
 
             fig3.savefig(os.path.join(outfolderpathGraphs, "count_per_teflon.png"))
+
+            volume = ((1/6)*(math.pi)*(diameters*diameters*diameters))/10000  # Volume of each droplet in cm³
+            volume_sum_per_bin = np.zeros(len(edges) - 1)
+            for i in range(len(edges) - 1):
+                mask = (diameters >= edges[i]) & (diameters < edges[i+1])
+                volume_sum_per_bin[i] = np.sum(volume[mask])
+            volume_fraction = volume_sum_per_bin / (total_area_mm2 * 1e6)  # µm² → mm² 
+                    
+            fig4 = Figure(figsize=(5,4), dpi=100)
+            ax4 = fig4.add_subplot(111)
+            ax4.bar(edges[:-1], volume_fraction, width=np.diff(edges),align='edge')
+            ax4.set_xlabel("Diameter (µm)")
+            ax4.set_ylabel("Volume Fraction")
+            ax4.set_title("Volume-Weighted Distribution")
+            canvas4 = FigureCanvasTkAgg(fig4, master=self.plot_frame)
+            canvas4.draw()
+            canvas4.get_tk_widget().grid(row=0, column=3, padx=8, pady=8)
+            self.canvases.append(canvas4)
+            fig4.savefig(os.path.join(outfolderpathGraphs, "volume_distribution.png"))
             
-            return self, diameters, areas, total_area_mm2, bins, outfolderpathGraphs
+            return self, diameters, areas, total_area_mm2, volume, volume_fraction, bins, outfolderpathGraphs
+
+            

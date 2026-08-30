@@ -1,1 +1,26 @@
-*.csv
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+myenv/
+
+# Generated analysis output
+output/
+core/output/
+
+# Temporary/runtime files
+*.log
+*.tmp
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# PythonAnywhere / local secrets
+.env

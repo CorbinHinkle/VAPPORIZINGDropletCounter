@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Droplet Counter</title>
+
+    <!-- Flask static CSS path -->
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+
+    <link rel="preconnect"
+          href="https://fonts.googleapis.com">
+
+    <link rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=Helvetica:wght@400;700&display=swap"
+          rel="stylesheet">
+</head>
+
+
+<body>
+
+    <div class="container">
+
+        <!-- ===================================================== -->
+        <!-- HEADER -->
+        <!-- ===================================================== -->
+
+        <header class="header">
+
+            <h1>Droplet Counter Web Application</h1>
+
+            <p class="subtitle">
+                Droplet counting and sizing analysis for the VAPPORIZING project
+            </p>
+
+        </header>
+
+
+        <!-- ===================================================== -->
+        <!-- IMAGE ANALYSIS CARD -->
+        <!-- ===================================================== -->
+
+        <section class="card">
+
+            <h2>Image Analysis</h2>
+
+            <form id="analysisForm"
+                  enctype="multipart/form-data">
+
+
+                <!-- IMAGE SELECTION -->
+
+                <div class="form-group">
+
+                    <label for="images">
+                        Select Images
+                    </label>
+
+                    <input
+                        type="file"
+                        id="images"
+                        name="images"
+                        multiple
+                        accept=".png,.jpg,.jpeg,.tif,.tiff"
+                        required
+                    >
+
+                    <p class="help-text">
+                        Select one or more microscope images.
+                        Supported formats: PNG, JPG, JPEG, TIF, TIFF.
+                    </p>
+
+                </div>
+
+
+                <!-- SELECTED FILE COUNT -->
+
+                <div id="fileInfo"
+                     class="file-info hidden">
+
+                    <strong>Images selected:</strong>
+
+                    <span id="selectedFileCount">
+                        0
+                    </span>
+
+                </div>
+
+
+                <!-- MICRONS PER PIXEL -->
+
+                <div class="form-group">
+
+                    <label for="micron_per_pixel">
+                        Microns per Pixel
+                    </label>
+
+                    <input
+                        type="number"
+                        id="micron_per_pixel"
+                        name="micron_per_pixel"
+                        value="0.0925"
+                        min="0.000001"
+                        step="any"
+                        required
+                    >
+
+                </div>
+
+
+                <!-- MINIMUM DIAMETER -->
+
+                <div class="form-group">
+
+                    <label for="min_diam">
+                        Minimum Droplet Diameter (µm)
+                    </label>
+
+                    <input
+                        type="number"
+                        id="min_diam"
+                        name="min_diam"
+                        value="1"
+                        min="0"
+                        step="any"
+                        required
+                    >
+
+                </div>
+
+
+                <!-- MAXIMUM DIAMETER -->
+
+                <div class="form-group">
+
+                    <label for="max_diam">
+                        Maximum Droplet Diameter (µm)
+                    </label>
+
+                    <input
+                        type="number"
+                        id="max_diam"
+                        name="max_diam"
+                        value="50"
+                        min="0"
+                        step="any"
+                        required
+                    >
+
+                </div>
+
+
+                <!-- RUN BUTTON -->
+
+                <button
+                    type="submit"
+                    id="runButton"
+                    class="run-button">
+
+                    Run Analysis
+
+                </button>
+
+            </form>
+
+        </section>
+
+
+
+        <!-- ===================================================== -->
+        <!-- LOADING SECTION -->
+        <!-- ===================================================== -->
+
+        <section id="loading"
+                 class="card hidden">
+
+            <h2>Processing Images...</h2>
+
+            <div class="spinner"></div>
+
+            <p id="loadingText">
+                Uploading and analyzing images. Please wait...
+            </p>
+
+            <p class="help-text">
+                Processing time may increase when analyzing large image sets.
+            </p>
+
+        </section>
+
+
+
+        <!-- ===================================================== -->
+        <!-- ERROR SECTION -->
+        <!-- ===================================================== -->
+
+        <section id="errorBox"
+                 class="card error-card hidden">
+
+            <h2>Analysis Error</h2>
+
+            <p id="errorMessage"></p>
+
+        </section>
+
+
+
+        <!-- ===================================================== -->
+        <!-- RESULTS SECTION -->
+        <!-- ===================================================== -->
+
+        <section id="results"
+                 class="card hidden">
+
+            <h2>Analysis Results</h2>
+
+
+            <!-- SUMMARY -->
+
+            <div class="results-grid">
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Images Processed
+                    </span>
+
+                    <span id="imagesProcessed"
+                          class="result-value">
+
+                        --
+
+                    </span>
+
+                </div>
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Droplets Detected
+                    </span>
+
+                    <span id="dropletsDetected"
+                          class="result-value">
+
+                        --
+
+                    </span>
+
+                </div>
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Minimum Diameter
+                    </span>
+
+                    <span id="minimumDiameter"
+                          class="result-value">
+
+                        -- µm
+
+                    </span>
+
+                </div>
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Maximum Diameter
+                    </span>
+
+                    <span id="maximumDiameter"
+                          class="result-value">
+
+                        -- µm
+
+                    </span>
+
+                </div>
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Mean Diameter
+                    </span>
+
+                    <span id="meanDiameter"
+                          class="result-value">
+
+                        -- µm
+
+                    </span>
+
+                </div>
+
+
+                <div class="result-item">
+
+                    <span class="result-label">
+                        Total Image Area
+                    </span>
+
+                    <span id="totalArea"
+                          class="result-value">
+
+                        -- mm²
+
+                    </span>
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- ================================================= -->
+            <!-- DOWNLOAD RESULTS -->
+            <!-- ================================================= -->
+
+            <div id="downloadsSection"
+                 class="downloads hidden">
+
+                <h3>Download Results</h3>
+
+                <div class="download-buttons">
+
+                    <a id="csvDownload"
+                       class="download-button"
+                       href="#"
+                       download>
+
+                        Download CSV Data
+
+                    </a>
+
+
+                    <a id="countGraphDownload"
+                       class="download-button hidden"
+                       href="#"
+                       target="_blank">
+
+                        View Count Distribution
+
+                    </a>
+
+
+                    <a id="areaGraphDownload"
+                       class="download-button hidden"
+                       href="#"
+                       target="_blank">
+
+                        View Area Distribution
+
+                    </a>
+
+
+                    <a id="teflonGraphDownload"
+                       class="download-button hidden"
+                       href="#"
+                       target="_blank">
+
+                        View Teflon Distribution
+
+                    </a>
+
+                </div>
+
+            </div>
+
+
+
+            <!-- ================================================= -->
+            <!-- GRAPH DISPLAY -->
+            <!-- ================================================= -->
+
+            <div id="graphsSection"
+                 class="graphs hidden">
+
+                <h3>Distribution Plots</h3>
+
+                <div class="graph-grid">
+
+
+                    <div id="countGraphContainer"
+                         class="graph-container hidden">
+
+                        <h4>Count Distribution</h4>
+
+                        <img id="countGraph"
+                             src=""
+                             alt="Count per area distribution">
+
+                    </div>
+
+
+
+                    <div id="areaGraphContainer"
+                         class="graph-container hidden">
+
+                        <h4>Area-Weighted Distribution</h4>
+
+                        <img id="areaGraph"
+                             src=""
+                             alt="Area weighted distribution">
+
+                    </div>
+
+
+
+                    <div id="teflonGraphContainer"
+                         class="graph-container hidden">
+
+                        <h4>Teflon-Scaled Distribution</h4>
+
+                        <img id="teflonGraph"
+                             src=""
+                             alt="Teflon scaled distribution">
+
+                    </div>
+
+
+                </div>
+
+            </div>
+
+
+        </section>
+
+
+
+    </div>
+
+
+    <!-- Flask static JavaScript path -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+</body>
+
+</html>
